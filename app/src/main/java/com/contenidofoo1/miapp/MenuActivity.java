@@ -43,6 +43,13 @@ public class MenuActivity extends AppCompatActivity
 
         NavigationView navigationView = (NavigationView) findViewById(R.id.nav_view);
         navigationView.setNavigationItemSelectedListener(this);
+
+        Fragment fragment = DeviceListFragment.newInstance();
+        FragmentManager fragmentManager = getSupportFragmentManager();
+        fragmentManager
+                .beginTransaction()
+                .add(R.id.main_content, fragment)
+                .commit();
     }
 
     @Override
@@ -84,12 +91,7 @@ public class MenuActivity extends AppCompatActivity
         int id = item.getItemId();
 
         if (id == R.id.nav_camera) {
-            Bundle args = new Bundle();
-            args.putString(PlaceHolderFragment.SECTION_TITLE, "Buscar medidores");
-
-            Fragment fragment = PlaceHolderFragment.newInstance("Buscar medidores");
-            fragment.setArguments(args);
-
+            Fragment fragment = DeviceListFragment.newInstance();
             FragmentManager fragmentManager = getSupportFragmentManager();
             fragmentManager
                     .beginTransaction()
