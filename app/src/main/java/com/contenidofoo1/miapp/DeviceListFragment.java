@@ -44,7 +44,7 @@ public class DeviceListFragment extends Fragment {
     public static final int REQUEST_FINE_LOCATION = 1001;
     public static final int SCAN_PERIOD = 10000;
     private static final String TAG = "blelist";
-    private static final String SERVICE_UUID = "32c64438-23c1-40e3-8a85-2dddc120e432";
+    public static final String SERVICE_UUID = "32c64438-23c1-40e3-8a85-2dddc120e432";
 
     private RecyclerView recyclerView;
     private BleDeviceAdapter bleDeviceAdapter;
@@ -85,8 +85,8 @@ public class DeviceListFragment extends Fragment {
                 //Abrir nueva activity
                 Toast.makeText(getContext(), "Conectando al dispositivo seleccionado", Toast.LENGTH_SHORT).show();
                 Bundle args = new Bundle();
-                args.putString(PlaceHolderFragment.SECTION_TITLE, "Nuevo Fragment");
-                Fragment fragment = PlaceHolderFragment.newInstance("Nuevo Fragment");
+                args.putString(DEVICE_ADDRESS, bluetoothDevice.getAddress());
+                Fragment fragment = ReadDeviceFragment.newInstance();
                 fragment.setArguments(args);
 
                 FragmentManager fragmentManager = getFragmentManager();
