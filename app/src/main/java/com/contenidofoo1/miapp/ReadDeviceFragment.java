@@ -28,21 +28,26 @@ public class ReadDeviceFragment extends Fragment {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             super.onConnectionStateChange(gatt, status, newState);
+            Log.d(TAG, "onConnectionStateChange: verificando el estado de la conexion");
 
             if(status == BluetoothGatt.GATT_FAILURE){
                 disconnectGattServer();
+                Log.d(TAG, "onConnectionStateChange: GATT_FAILURE");
                 return;
             }else if(status != BluetoothGatt.GATT_SUCCESS){
                 disconnectGattServer();
+                Log.d(TAG, "onConnectionStateChange: GATT_NO_SUCCESS");
                 return;
             }
 
             if(newState == BluetoothGatt.STATE_CONNECTED){
                 mConnected = true;
                 gatt.discoverServices();
+                Log.d(TAG, "onConnectionStateChange: Intentanto descubrir servicios");
 
             }else if(newState == BluetoothGatt.STATE_DISCONNECTED){
                 disconnectGattServer();
+                Log.d(TAG, "onConnectionStateChange: STATE_DISCONNECTED");
             }
         }
 
@@ -100,6 +105,9 @@ public class ReadDeviceFragment extends Fragment {
 
         BluetoothDevice bluetoothDevice = bluetoothAdapter.getRemoteDevice(address);
         bluetoothGatt = bluetoothDevice.connectGatt(getContext(), false, mGattCallback);
+        Log.d(TAG, "onCreateView: Intentanto conectarse al server GATT");
+
+
 
         return view;
     }
