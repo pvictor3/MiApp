@@ -30,7 +30,7 @@
             android:theme="@style/AppTheme"></activity>
         <service
             android:name=".BluetoothLeService"
-            android:enable="true"
+            android:enabled="true"
             android:exported="true">
 
         </service>

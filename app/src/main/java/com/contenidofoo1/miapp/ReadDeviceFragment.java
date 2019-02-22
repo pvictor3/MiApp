@@ -7,9 +7,15 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.support.v4.app.Fragment;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -18,62 +24,57 @@ import android.view.ViewGroup;
 
 import java.util.UUID;
 
+import static android.content.Context.BIND_AUTO_CREATE;
+
 public class ReadDeviceFragment extends Fragment {
     private static final String TAG = "ReadFragment";
     BluetoothAdapter bluetoothAdapter;
     BluetoothGatt bluetoothGatt;
+    private String mDeviceAddress;
     private boolean mConnected;
 
-    private BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
+    private BluetoothLeService mBluetoothLeService;
+
+    private final ServiceConnection mServiceConnection = new ServiceConnection() {
         @Override
-        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-            super.onConnectionStateChange(gatt, status, newState);
-            Log.d(TAG, "onConnectionStateChange: verificando el estado de la conexion");
-
-            if(status == BluetoothGatt.GATT_FAILURE){
-                disconnectGattServer();
-                Log.d(TAG, "onConnectionStateChange: GATT_FAILURE");
-                return;
-            }else if(status != BluetoothGatt.GATT_SUCCESS){
-                disconnectGattServer();
-                Log.d(TAG, "onConnectionStateChange: GATT_NO_SUCCESS");
-                return;
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            mBluetoothLeService = ((BluetoothLeService.LocalBinder) service).getService();
+            if(!mBluetoothLeService.initialize()){
+                Log.e(TAG, "onServiceConnected: Unable to initialize Bluetooth");
+                getActivity().finish();
             }
+            mBluetoothLeService.connect(mDeviceAddress);
+        }
 
-            if(newState == BluetoothGatt.STATE_CONNECTED){
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            mBluetoothLeService = null;
+        }
+    };
+
+    // Handles various events fired by the Service.
+    // ACTION_GATT_CONNECTED: connected to a GATT server.
+    // ACTION_GATT_DISCONNECTED: disconnected from a GATT server.
+    // ACTION_GATT_SERVICES_DISCOVERED: discovered GATT services.
+    // ACTION_DATA_AVAILABLE: received data from the device.  This can be a result of read
+    //                        or notification operations.
+    private final BroadcastReceiver mGattUpdateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+            if(BluetoothLeService.ACTION_GATT_CONNECTED.equals(action)){
                 mConnected = true;
-                gatt.discoverServices();
-                Log.d(TAG, "onConnectionStateChange: Intentanto descubrir servicios");
+            }else if(BluetoothLeService.ACTION_GATT_DISCONNECTED.equals(action)){
+                mConnected = false;
+            }else if(BluetoothLeService.ACTION_GATT_SERVICES_DISCOVERED.equals(action)){
+                BluetoothGattService service = mBluetoothLeService.getGattService();
+                for(BluetoothGattCharacteristic characteristic : service.getCharacteristics()){
+                    Log.d(TAG, "onReceive: Characteristic UUID " + characteristic.getUuid());
+                }
 
-            }else if(newState == BluetoothGatt.STATE_DISCONNECTED){
-                disconnectGattServer();
-                Log.d(TAG, "onConnectionStateChange: STATE_DISCONNECTED");
+            }else if(BluetoothLeService.ACTION_DATA_AVAILABLE.equals(action)){
+                Log.d(TAG, "onReceive: ACTION_DATA_AVAILABLE");
             }
-        }
-
-        @Override
-        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-            super.onServicesDiscovered(gatt, status);
-            if(status != BluetoothGatt.GATT_SUCCESS){
-                return;
-            }
-
-            BluetoothGattService service = gatt.getService(UUID.fromString(DeviceListFragment.SERVICE_UUID));
-        }
-
-        @Override
-        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            super.onCharacteristicRead(gatt, characteristic, status);
-        }
-
-        @Override
-        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            super.onCharacteristicWrite(gatt, characteristic, status);
-        }
-
-        @Override
-        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            super.onCharacteristicChanged(gatt, characteristic);
         }
     };
 
@@ -97,19 +98,40 @@ public class ReadDeviceFragment extends Fragment {
         // Inflate the layout for this fragment
         View view = inflater.inflate(R.layout.fragment_read_device, container, false);
 
-        String address = getArguments().getString(DeviceListFragment.DEVICE_ADDRESS);
-        Log.d(TAG, "onCreateView: Device addresss  " + address);
+        mDeviceAddress = getArguments().getString(DeviceListFragment.DEVICE_ADDRESS);
+        Log.d(TAG, "onCreateView: Device addresss  " + mDeviceAddress);
 
-    BluetoothManager bluetoothManager = (BluetoothManager) getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
-    bluetoothAdapter = bluetoothManager.getAdapter();
-
-        BluetoothDevice bluetoothDevice = bluetoothAdapter.getRemoteDevice(address);
-        bluetoothGatt = bluetoothDevice.connectGatt(getContext(), false, mGattCallback);
-        Log.d(TAG, "onCreateView: Intentanto conectarse al server GATT");
-
-
-
+        Intent gattServiceIntent = new Intent(getContext(), BluetoothLeService.class);
+        getActivity().bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
         return view;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        getActivity().registerReceiver(mGattUpdateReceiver, makeGattUpdateIntentFilter());
+        Log.d(TAG, "onResume: BroadcastReceiver registrado!!!");
+        if(mBluetoothLeService != null){
+            final boolean result = mBluetoothLeService.connect(mDeviceAddress);
+            Log.d(TAG, "onResume: Connect request result = " + result);
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        getActivity().unregisterReceiver(mGattUpdateReceiver);
+        getActivity().unbindService(mServiceConnection);
+        mBluetoothLeService = null;
+    }
+
+    private static IntentFilter makeGattUpdateIntentFilter() {
+        final IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(BluetoothLeService.ACTION_GATT_CONNECTED);
+        intentFilter.addAction(BluetoothLeService.ACTION_GATT_DISCONNECTED);
+        intentFilter.addAction(BluetoothLeService.ACTION_GATT_SERVICES_DISCOVERED);
+        intentFilter.addAction(BluetoothLeService.ACTION_DATA_AVAILABLE);
+        return intentFilter;
     }
 
     private void disconnectGattServer(){
