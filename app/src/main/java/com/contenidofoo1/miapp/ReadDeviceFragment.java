@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.content.BroadcastReceiver;
@@ -21,7 +22,15 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Switch;
+import android.widget.TextView;
+import android.widget.Toast;
 
+import java.io.UnsupportedEncodingException;
+import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 
 import static android.content.Context.BIND_AUTO_CREATE;
@@ -32,8 +41,19 @@ public class ReadDeviceFragment extends Fragment {
     BluetoothGatt bluetoothGatt;
     private String mDeviceAddress;
     private boolean mConnected;
+    private List<BluetoothGattCharacteristic> characteristics;
+    private BluetoothGattCharacteristic counterCharacteristic;
+    private HashMap<String,String> charValues;
 
     private BluetoothLeService mBluetoothLeService;
+
+    private TextView counterTextView;
+    private TextView brandTextView;
+    private TextView deviceNumberTextView;
+    private EditText newValueEditText;
+    private Button saveButton;
+    private Button updateButton;
+    private Switch valveSwitch;
 
     private final ServiceConnection mServiceConnection = new ServiceConnection() {
         @Override
@@ -67,13 +87,30 @@ public class ReadDeviceFragment extends Fragment {
             }else if(BluetoothLeService.ACTION_GATT_DISCONNECTED.equals(action)){
                 mConnected = false;
             }else if(BluetoothLeService.ACTION_GATT_SERVICES_DISCOVERED.equals(action)){
+                charValues = new HashMap<>();
                 BluetoothGattService service = mBluetoothLeService.getGattService();
-                for(BluetoothGattCharacteristic characteristic : service.getCharacteristics()){
-                    Log.d(TAG, "onReceive: Characteristic UUID " + characteristic.getUuid());
+                characteristics = service.getCharacteristics();
+                for(BluetoothGattCharacteristic characteristic : characteristics){
+                    if(characteristic.getUuid().toString().equals(BluetoothLeService.COUNTER_UUID)){
+                        Log.d(TAG, "onReceive: Properties of Counter " + characteristic.getProperties());
+                        counterCharacteristic = characteristic;
+                    }
                 }
-
+                requestCharacteristic();
             }else if(BluetoothLeService.ACTION_DATA_AVAILABLE.equals(action)){
                 Log.d(TAG, "onReceive: ACTION_DATA_AVAILABLE");
+                Log.d(TAG, "onReceive: " + intent.getStringExtra(BluetoothLeService.UUID_DATA)
+                        + " : " + intent.getStringExtra(BluetoothLeService.EXTRA_DATA));
+                charValues.put(intent.getStringExtra(BluetoothLeService.UUID_DATA),
+                        intent.getStringExtra(BluetoothLeService.EXTRA_DATA));
+                characteristics.remove(characteristics.size() - 1 );
+                if(characteristics.size() > 0){
+                    requestCharacteristic();
+                }else{
+                    Toast.makeText(context, "LECTURA COMPLETA DE CHARACTERISTICAS", Toast.LENGTH_LONG).show();
+                    actualizarUI();
+                    enableNotify();
+                }
             }
         }
     };
@@ -97,6 +134,13 @@ public class ReadDeviceFragment extends Fragment {
                              Bundle savedInstanceState) {
         // Inflate the layout for this fragment
         View view = inflater.inflate(R.layout.fragment_read_device, container, false);
+        counterTextView = view.findViewById(R.id.count_text_read_device);
+        brandTextView = view.findViewById(R.id.brand_text_read_device);
+        deviceNumberTextView = view.findViewById(R.id.number_text_read_device);
+        newValueEditText = view.findViewById(R.id.new_value_edit_text);
+        saveButton = view.findViewById(R.id.save_button_read_device);
+        updateButton = view.findViewById(R.id.update_button_read_device);
+        valveSwitch = view.findViewById(R.id.valve_switch_read_device);
 
         mDeviceAddress = getArguments().getString(DeviceListFragment.DEVICE_ADDRESS);
         Log.d(TAG, "onCreateView: Device addresss  " + mDeviceAddress);
@@ -119,8 +163,16 @@ public class ReadDeviceFragment extends Fragment {
 
     @Override
     public void onPause() {
+        Log.d(TAG, "onPause: ");
         super.onPause();
         getActivity().unregisterReceiver(mGattUpdateReceiver);
+
+    }
+
+    @Override
+    public void onStop() {
+        Log.d(TAG, "onStop: ");
+        super.onStop();
         getActivity().unbindService(mServiceConnection);
         mBluetoothLeService = null;
     }
@@ -134,13 +186,48 @@ public class ReadDeviceFragment extends Fragment {
         return intentFilter;
     }
 
-    private void disconnectGattServer(){
-        mConnected = false;
-        if(bluetoothGatt != null){
-            bluetoothGatt.disconnect();
-            bluetoothGatt.close();
+    private void requestCharacteristic(){
+        mBluetoothLeService.readCharacteristic(characteristics.get(characteristics.size() - 1));
+    }
+
+    private void actualizarUI(){
+        counterTextView.setText(charValues.get(BluetoothLeService.COUNTER_UUID));
+        brandTextView.setText(charValues.get(BluetoothLeService.BRAND_UUID));
+        deviceNumberTextView.setText(charValues.get(BluetoothLeService.DEVICENUMBER_UUID));
+        if(charValues.get(BluetoothLeService.VALVE_UUID).equals("Abierta")){
+            valveSwitch.setChecked(true);
         }
 
+        updateButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String newValue = newValueEditText.getText().toString();
+                byte[] message = new byte[0];
+                try{
+                    message = newValue.getBytes("UTF-8");
+                }catch (UnsupportedEncodingException e){
+                    Log.e(TAG, "onClick: Failed to convert message string to byte array");
+                }
+                counterCharacteristic.setValue(message);
+                Log.d(TAG, "onClick: Escribiendo en caracteristica " + newValue);
+                mBluetoothLeService.writeCharacteristic(counterCharacteristic);
+            }
+        });
+    }
+
+    private void enableNotify(){
+        counterCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        /*BluetoothGattDescriptor descriptor = counterCharacteristic.getDescriptor(convertFromInteger(0x2902));
+        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+        Log.d(TAG, "enableNotify: " + mBluetoothLeService.writeDescriptor(descriptor));*/
+        mBluetoothLeService.setCharacteristicNotification(counterCharacteristic, true);
+    }
+
+    public UUID convertFromInteger(int i) {
+        final long MSB = 0x0000000000001000L;
+        final long LSB = 0x800000805f9b34fbL;
+        long value = i & 0xFFFFFFFF;
+        return new UUID(MSB | (value << 32), LSB);
     }
 
 }

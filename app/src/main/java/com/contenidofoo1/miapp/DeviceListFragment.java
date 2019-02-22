@@ -38,154 +38,154 @@ import java.util.UUID;
  * A simple {@link Fragment} subclass.
  */
 public class DeviceListFragment extends Fragment {
-    public static final String DEVICE_NAME = "nombre del dispositivo";
-    public static final String DEVICE_ADDRESS = "direccion del dispositivo";
-    public static final int REQUEST_ENABLE_BT = 1000;
-    public static final int REQUEST_FINE_LOCATION = 1001;
-    public static final int SCAN_PERIOD = 10000;
-    private static final String TAG = "blelist";
-    public static final String SERVICE_UUID = "32c64438-23c1-40e3-8a85-2dddc120e432";
+  public static final String DEVICE_NAME = "nombre del dispositivo";
+  public static final String DEVICE_ADDRESS = "direccion del dispositivo";
+  public static final int REQUEST_ENABLE_BT = 1000;
+  public static final int REQUEST_FINE_LOCATION = 1001;
+  public static final int SCAN_PERIOD = 10000;
+  private static final String TAG = "blelist";
+  public static final String SERVICE_UUID = "32c64438-23c1-40e3-8a85-2dddc120e432";
 
-    private RecyclerView recyclerView;
-    private BleDeviceAdapter bleDeviceAdapter;
-    private RecyclerView.LayoutManager layoutManager;
+  private RecyclerView recyclerView;
+  private BleDeviceAdapter bleDeviceAdapter;
+  private RecyclerView.LayoutManager layoutManager;
 
-    BluetoothAdapter bluetoothAdapter;
-    BluetoothGatt bluetoothGatt;
-    private Handler handler = new Handler();
-    private boolean mScanning;
-    private ScanCallback mScanCallback;
-    private BluetoothLeScanner mbluetoothLeScanner;
-    private Handler mHandler;
+  BluetoothAdapter bluetoothAdapter;
+  BluetoothGatt bluetoothGatt;
+  private Handler handler = new Handler();
+  private boolean mScanning;
+  private ScanCallback mScanCallback;
+  private BluetoothLeScanner mbluetoothLeScanner;
+  private Handler mHandler;
 
-    public static DeviceListFragment newInstance(){
-        DeviceListFragment fragment = new DeviceListFragment();
-        return fragment;
+  public static DeviceListFragment newInstance(){
+    DeviceListFragment fragment = new DeviceListFragment();
+    return fragment;
+  }
+
+  public DeviceListFragment() {
+    // Required empty public constructor
+  }
+
+
+  @Override
+  public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                           Bundle savedInstanceState) {
+
+    View view = inflater.inflate(R.layout.fragment_device_list, container, false);
+    recyclerView = view.findViewById(R.id.recycler_device_list);
+    recyclerView.setHasFixedSize(true);
+
+    layoutManager = new LinearLayoutManager(getContext());
+    recyclerView.setLayoutManager(layoutManager);
+
+    bleDeviceAdapter = new BleDeviceAdapter(new BleDeviceAdapter.OnItemClickListener() {
+      @Override
+      public void onItemClickListener(BluetoothDevice bluetoothDevice) {
+        //Abrir nueva activity
+        Toast.makeText(getContext(), "Conectando al dispositivo seleccionado", Toast.LENGTH_SHORT).show();
+        Bundle args = new Bundle();
+        args.putString(DEVICE_ADDRESS, bluetoothDevice.getAddress());
+        Fragment fragment = ReadDeviceFragment.newInstance();
+        fragment.setArguments(args);
+
+        FragmentManager fragmentManager = getFragmentManager();
+        FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+
+        fragmentTransaction.replace(R.id.main_content,fragment);
+        fragmentTransaction.addToBackStack(null);
+        fragmentTransaction.commit();
+
+      }
+    });
+    recyclerView.setAdapter(bleDeviceAdapter);
+
+    final BluetoothManager bluetoothManager = (BluetoothManager) getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
+    bluetoothAdapter = bluetoothManager.getAdapter();
+
+    startScan();
+    return view;
+  }
+
+  private void startScan(){
+    if(!hasPermissions() && mScanning){
+      return;
     }
 
-    public DeviceListFragment() {
-        // Required empty public constructor
+    List<ScanFilter> filters = new ArrayList<>();
+    ScanFilter scanFilter = new ScanFilter.Builder()
+            .setServiceUuid(new ParcelUuid(UUID.fromString(SERVICE_UUID)))
+            .build();
+    //filters.add(scanFilter);
+
+    ScanSettings settings = new ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
+            .build();
+
+    mScanCallback = new BtleScanCallback();
+    mbluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+    mbluetoothLeScanner.startScan(filters, settings, mScanCallback);
+    mScanning = true;
+    mHandler = new Handler();
+    mHandler.postDelayed(new Runnable() {
+      @Override
+      public void run() {
+        stopScan();
+      }
+    }, SCAN_PERIOD);
+  }
+
+  private boolean hasPermissions(){
+    if(bluetoothAdapter == null || !bluetoothAdapter.isEnabled()){
+      Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+      startActivityForResult(intent, REQUEST_ENABLE_BT);
+      return false;
+    }else if(!hasLocationPermission()){
+      requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_FINE_LOCATION);
+      return false;
+    }
+    return true;
+  }
+
+  private boolean hasLocationPermission(){
+    return ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+  }
+
+  private void stopScan(){
+    if(mScanning && bluetoothAdapter != null && bluetoothAdapter.isEnabled() && mbluetoothLeScanner != null)
+    {
+      mbluetoothLeScanner.stopScan(mScanCallback);
+      scanComplete();
     }
 
+    mScanCallback = null;
+    mScanning = false;
+    mHandler = null;
+  }
+
+  private void scanComplete(){
+    Log.d(TAG, "scanComplete: Escaner finalizado");
+  }
+
+  private class BtleScanCallback extends ScanCallback{
+    @Override
+    public void onScanResult(int callbackType, ScanResult result) {
+      bleDeviceAdapter.addDevice(result.getDevice());
+      bleDeviceAdapter.notifyDataSetChanged();
+    }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                             Bundle savedInstanceState) {
-
-        View view = inflater.inflate(R.layout.fragment_device_list, container, false);
-        recyclerView = view.findViewById(R.id.recycler_device_list);
-        recyclerView.setHasFixedSize(true);
-
-        layoutManager = new LinearLayoutManager(getContext());
-        recyclerView.setLayoutManager(layoutManager);
-
-        bleDeviceAdapter = new BleDeviceAdapter(new BleDeviceAdapter.OnItemClickListener() {
-            @Override
-            public void onItemClickListener(BluetoothDevice bluetoothDevice) {
-                //Abrir nueva activity
-                Toast.makeText(getContext(), "Conectando al dispositivo seleccionado", Toast.LENGTH_SHORT).show();
-                Bundle args = new Bundle();
-                args.putString(DEVICE_ADDRESS, bluetoothDevice.getAddress());
-                Fragment fragment = ReadDeviceFragment.newInstance();
-                fragment.setArguments(args);
-
-                FragmentManager fragmentManager = getFragmentManager();
-                FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
-
-                fragmentTransaction.replace(R.id.main_content,fragment);
-                fragmentTransaction.addToBackStack(null);
-                fragmentTransaction.commit();
-
-            }
-        });
-        recyclerView.setAdapter(bleDeviceAdapter);
-
-        final BluetoothManager bluetoothManager = (BluetoothManager) getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
-        bluetoothAdapter = bluetoothManager.getAdapter();
-
-        startScan();
-        return view;
+    public void onBatchScanResults(List<ScanResult> results) {
+      for(ScanResult result : results){
+        bleDeviceAdapter.addDevice(result.getDevice());
+        bleDeviceAdapter.notifyDataSetChanged();
+      }
     }
 
-    private void startScan(){
-        if(!hasPermissions() && mScanning){
-            return;
-        }
-
-        List<ScanFilter> filters = new ArrayList<>();
-        ScanFilter scanFilter = new ScanFilter.Builder()
-                .setServiceUuid(new ParcelUuid(UUID.fromString(SERVICE_UUID)))
-                .build();
-        //filters.add(scanFilter);
-
-        ScanSettings settings = new ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
-                .build();
-
-        mScanCallback = new BtleScanCallback();
-        mbluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-        mbluetoothLeScanner.startScan(filters, settings, mScanCallback);
-        mScanning = true;
-        mHandler = new Handler();
-        mHandler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                stopScan();
-            }
-        }, SCAN_PERIOD);
+    @Override
+    public void onScanFailed(int errorCode) {
+      Log.e(TAG, "onScanFailed: BLE Scan Failed with code" + errorCode);
     }
-
-    private boolean hasPermissions(){
-        if(bluetoothAdapter == null || !bluetoothAdapter.isEnabled()){
-            Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(intent, REQUEST_ENABLE_BT);
-            return false;
-        }else if(!hasLocationPermission()){
-            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_FINE_LOCATION);
-            return false;
-        }
-        return true;
-    }
-
-    private boolean hasLocationPermission(){
-        return ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void stopScan(){
-        if(mScanning && bluetoothAdapter != null && bluetoothAdapter.isEnabled() && mbluetoothLeScanner != null)
-        {
-            mbluetoothLeScanner.stopScan(mScanCallback);
-            scanComplete();
-        }
-
-        mScanCallback = null;
-        mScanning = false;
-        mHandler = null;
-    }
-
-    private void scanComplete(){
-        Log.d(TAG, "scanComplete: Escaner finalizado");
-    }
-
-    private class BtleScanCallback extends ScanCallback{
-        @Override
-        public void onScanResult(int callbackType, ScanResult result) {
-            bleDeviceAdapter.addDevice(result.getDevice());
-            bleDeviceAdapter.notifyDataSetChanged();
-        }
-
-        @Override
-        public void onBatchScanResults(List<ScanResult> results) {
-            for(ScanResult result : results){
-                bleDeviceAdapter.addDevice(result.getDevice());
-                bleDeviceAdapter.notifyDataSetChanged();
-            }
-        }
-
-        @Override
-        public void onScanFailed(int errorCode) {
-            Log.e(TAG, "onScanFailed: BLE Scan Failed with code" + errorCode);
-        }
-    }
+  }
 
 }
